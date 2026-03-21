@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 def ocr_inference(image_records, image_processor, model, device="cuda", batch_size=4):
     """
-    Run batch OCR inference on a set of cropped cell images.
+    Run batch OCR inference.
 
     Args:
         image_records: DataFrame or iterable containing image data with a 'Hash' 
