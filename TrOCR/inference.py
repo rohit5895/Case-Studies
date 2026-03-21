@@ -1,6 +1,23 @@
 import torch
 from torch.utils.data import DataLoader
 
+class PrepareInference(Dataset):
+    def __init__(self, df, processor):
+        self.df = df.reset_index(drop=True)  
+        self.processor = processor
+
+    def __len__(self):
+        return len(self.df)
+    def __getitem__(self, idx):
+        localiser = self.df['Localiser'][idx]
+        h_val = self.df['Hash'][idx]
+        image = object_list[localiser].convert("RGB")
+        pixel_values = self.processor(image, return_tensors="pt").pixel_values
+        encoding = {"pixel_values": pixel_values.squeeze()}
+        hash_val = {"Hash": h_val}
+        
+        return encoding, hash_val
+
 
 def ocr_inference(image_records, image_processor, model, device="cuda", batch_size=4):
     """
