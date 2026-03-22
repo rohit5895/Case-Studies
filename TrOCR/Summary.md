@@ -1,5 +1,17 @@
 # A Descriptive Study on Teacher-Student Knowledge Distillation for OCR
 
+## Table of Contents
+
+- [Abstract](#abstract)
+- [1. The Distillation Pattern](#1-the-distillation-pattern)
+- [2. Teacher & Student Profiles](#2-teacher--student-profiles)
+- [3. Cost Analysis](#3-cost-analysis)
+- [4. What Gets Distilled — And What Doesn't](#4-what-gets-distilled--and-what-doesnt)
+- [5. Relation to Knowledge Distillation Literature](#5-relation-to-knowledge-distillation-literature)
+- [6. Key Takeaways](#6-key-takeaways)
+
+---
+
 ## Abstract
 
 This study describes how a 235-billion-parameter vision-language model (Qwen3-VL-235B) was used as a **teacher** to generate training labels for a 558-million-parameter OCR model (TrOCR-Large) — the **student**. The student achieved a Character Error Rate (CER) of 0.000765 on domain-specific table cell images, effectively inheriting the teacher's comprehension at **421× fewer parameters** and near-zero marginal inference cost. This document frames the approach within the broader knowledge distillation literature and analyses the cost-accuracy trade-off. For training specifics (hyperparameters, infrastructure, checkpointing), refer to the companion `MODEL_TRAINING_REPORT.md`.

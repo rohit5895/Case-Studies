@@ -1,5 +1,23 @@
 # Model Training Report: TrOCR Fine-Tuning for Domain-Specific Table Cell OCR
 
+## Table of Contents
+
+- [Overview](#overview)
+- [License](#license)
+- [1. Dataset](#1-dataset)
+- [2. Model Architecture](#2-model-architecture)
+- [3. Training Configuration](#3-training-configuration)
+- [4. Loss Function & Optimization](#4-loss-function--optimization)
+- [5. Checkpointing & Evaluation](#5-checkpointing--evaluation)
+- [6. Results](#6-results)
+- [7. Inference](#7-inference)
+- [8. Deployment](#8-deployment)
+- [9. Key Dependencies](#9-key-dependencies)
+- [10. Project File Reference](#10-project-file-reference)
+- [Summary](#summary)
+
+---
+
 ## Overview
 
 This project fine-tunes **TrOCR-Large (Stage 1)** for optical character recognition on cropped table-cell images. Training was performed on AWS SageMaker using distributed training across 4 GPUs, achieving near-perfect OCR accuracy on the target domain.
