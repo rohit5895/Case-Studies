@@ -69,7 +69,17 @@ The teacher model on AWS Bedrock is priced at **$0.53 per 1M input tokens** and 
 
 ### Inference (Student) — Recurring Cost
 
-The student runs on a single `ml.g5.xlarge` instance (1× A10G, ~$1.01/hr on-demand for SageMaker inference). At batch-32 throughput, it processes thousands of images per hour. The marginal cost per image approaches zero.
+The student runs on a single `ml.g5.xlarge` instance (1× A10G, ~$1.01/hr on-demand for SageMaker inference). At batch-32 throughput, it processes thousands of images per hour.
+
+Crucially, **inference runs only 5–10 minutes per day** in practice. The system caches results, so the model is only invoked for new or changed images — not on every request. This collapses the effective daily compute time to a small window.
+
+| Time Horizon | Billed Compute          | Estimated Cost         |
+|--------------|-------------------------|------------------------|
+| Per day      | 5–10 min × $1.01/hr     | **~$0.08–$0.17/day**   |
+| Per month    | ~2.5–5 hr active        | **~$2.50–$5.00/month** |
+| Per year     | ~30–60 hr active        | **~$30–$60/year**      |
+
+The marginal cost per image, when amortised over cached repeat lookups, is effectively zero.
 
 ### The Trade-Off
 
@@ -78,7 +88,7 @@ The student runs on a single `ml.g5.xlarge` instance (1× A10G, ~$1.01/hr on-dem
 | Run the teacher on every new image        | Bedrock API per call         | Scales linearly with volume |
 | Label once with teacher, deploy student   | Fixed label cost + cheap GPU | Near-flat after labeling    |
 
-For any workload beyond the initial labeling volume, the student approach dominates. The break-even point is reached almost immediately — the student's per-image cost is negligible compared to repeated teacher API calls.
+For any workload beyond the initial labeling volume, the student approach dominates. The caching layer amplifies this advantage further: the model handles the **incremental** workload each day, not the full corpus. Annual inference cost at this usage pattern is comparable to a single day's worth of teacher API calls during labeling.
 
 ---
 
