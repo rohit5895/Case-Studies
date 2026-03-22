@@ -1,7 +1,12 @@
-import boto3
 import sagemaker
 from sagemaker.huggingface import HuggingFace
 
+# ── Replace these with your actual S3 bucket name ──────────────────────────
+S3_BUCKET = "<your-bucket>"
+S3_CHECKPOINT_URI = f"s3://{S3_BUCKET}/checkpoints"
+S3_TRAIN_URI      = f"s3://{S3_BUCKET}/Train"
+S3_VAL_URI        = f"s3://{S3_BUCKET}/Val"
+# ───────────────────────────────────────────────────────────────────────────
 
 role = sagemaker.get_execution_role()
 sagemaker_session = sagemaker.Session()
@@ -25,12 +30,16 @@ estimator = HuggingFace(
         "eval_every_n_epochs": 2,
         "model_name": "microsoft/trocr-large-stage1",
         "gradient_accumulation_steps": 1,
+        "save_every_n_steps": 200,
+        "max_grad_norm": 1.0,
     },
     max_run=86400,    # 24 hours
-    checkpoint_s3_uri="s3://<your-bucket>/checkpoints",
+    checkpoint_s3_uri=S3_CHECKPOINT_URI,
 )
 
 estimator.fit({
-    "training":   "s3://<your-bucket>/Train",
-    "validation": "s3://<your-bucket>/Val",
+    "training":   S3_TRAIN_URI,
+    "validation": S3_VAL_URI,
 })
+
+print(f"Training job name: {estimator.latest_training_job.name}")

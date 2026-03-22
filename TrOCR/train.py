@@ -141,7 +141,11 @@ class CellOCRDataset(Dataset):
     def __getitem__(self, idx):
         file_name = self.df["file_name"][idx]
         image_path = os.path.join(self.root_dir, file_name)
-        image = Image.open(image_path).convert("RGB")
+        try:
+            image = Image.open(image_path).convert("RGB")
+        except Exception as e:
+            logger.warning(f"Failed to load image {image_path}: {e}. Returning blank image.")
+            image = Image.new("RGB", (384, 384), color=255)
         pixel_values = self.processor(image, return_tensors="pt").pixel_values
 
         return {
@@ -222,6 +226,10 @@ def train(args):
     train_csv = os.path.join(args.training_dir, "labels.csv")
     val_csv   = os.path.join(args.validation_dir, "labels.csv")
 
+    for csv_path in (train_csv, val_csv):
+        if not os.path.isfile(csv_path):
+            raise FileNotFoundError(f"Labels CSV not found: {csv_path}")
+
     train_df = pd.read_csv(train_csv)
     val_df   = pd.read_csv(val_csv)
     if main:
@@ -282,7 +290,6 @@ def train(args):
     best_cer = float("inf")
     start_epoch = 0
     start_step = 0
-    save_every_n_steps = 200  # intra-epoch checkpoint frequency
 
     # ── Resume from checkpoint ───────────────────────────────────────────
     checkpoint_path = os.path.join(args.checkpoint_dir, "checkpoint.pt")
@@ -295,10 +302,14 @@ def train(args):
         lr_scheduler.load_state_dict(ckpt["scheduler_state_dict"])
         scaler.load_state_dict(ckpt["scaler_state_dict"])
         start_epoch = ckpt["epoch"]
-        start_step = ckpt.get("step", -1) + 1
+        saved_step = ckpt.get("step", -1)
         best_cer = ckpt["best_cer"]
-        if start_step == 0:
+        # step=-1 means the checkpoint was saved at end-of-epoch; start the next epoch from step 0
+        if saved_step == -1:
             start_epoch += 1
+            start_step = 0
+        else:
+            start_step = saved_step + 1
         if main:
             logger.info(f"Resumed at epoch {start_epoch}, step {start_step}, best CER: {best_cer}")
     else:
@@ -331,7 +342,7 @@ def train(args):
 
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_grad_norm)
                 scaler.step(optimizer)
                 scaler.update()
                 lr_scheduler.step()
@@ -346,7 +357,7 @@ def train(args):
                 )
 
             # ── Intra-epoch checkpoint (rank 0 only) ─────────────────────
-            if main and save_every_n_steps > 0 and (step + 1) % save_every_n_steps == 0:
+            if main and args.save_every_n_steps > 0 and (step + 1) % args.save_every_n_steps == 0:
                 _save_checkpoint(checkpoint_path, args, epoch, step,
                                  model, optimizer, lr_scheduler, scaler, best_cer)
                 logger.info(f"Intra-epoch checkpoint saved at epoch {epoch} step {step}")
@@ -452,6 +463,8 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_steps",                 type=int,   default=200)
     parser.add_argument("--eval_every_n_epochs",          type=int,   default=2)
     parser.add_argument("--gradient_accumulation_steps",  type=int,   default=1)
+    parser.add_argument("--save_every_n_steps",           type=int,   default=200)
+    parser.add_argument("--max_grad_norm",                type=float, default=1.0)
     parser.add_argument("--model_name",                   type=str,   default="microsoft/trocr-large-stage1")
 
     parser.add_argument("--model_dir",      type=str, default=os.environ.get("SM_MODEL_DIR",          "/opt/ml/model"))
