@@ -14,7 +14,7 @@
 
 ## Abstract
 
-This study describes how a 235-billion-parameter vision-language model (Qwen3-VL-235B) was used as a **teacher** to generate training labels for a 558-million-parameter OCR model (TrOCR-Large) — the **student**. The student achieved a Character Error Rate (CER) of 0.000765 on domain-specific table cell images, effectively inheriting the teacher's comprehension at **421× fewer parameters** and near-zero marginal inference cost. This document frames the approach within the broader knowledge distillation literature and analyses the cost-accuracy trade-off. For training specifics (hyperparameters, infrastructure, checkpointing), refer to the companion `MODEL_TRAINING_REPORT.md`.
+This study describes how a 235-billion-parameter vision-language model (Qwen3-VL-235B) was used as a **teacher** to generate training labels for two specialised 558-million-parameter OCR models (TrOCR-Large) — the **students**. Training labels were generated at scale using **AWS Bedrock Batch Inference**. Rather than deploying a single general student, the pipeline trains **two domain-specific models** — one for numeric cell content and one for text cell content — improving accuracy by reducing each model's output vocabulary to its relevant character set. The students achieved a Character Error Rate (CER) of 0.000765 on domain-specific table cell images, effectively inheriting the teacher's comprehension at **421× fewer parameters** and near-zero marginal inference cost. This document frames the approach within the broader knowledge distillation literature and analyses the cost-accuracy trade-off. For training specifics (hyperparameters, infrastructure, checkpointing), refer to the companion `MODEL_TRAINING_REPORT.md`.
 
 ---
 
@@ -25,21 +25,30 @@ Knowledge distillation traditionally involves training a smaller "student" netwo
 ```
   ┌──────────────────────────┐
   │       TEACHER             │
-  │  Qwen3-VL-235B-A22B      │     One-time labeling
+  │  Qwen3-VL-235B-A22B      │   Bedrock Batch Inference
   │  235B params (22B active) │ ──────────────────────►  129,041 labeled images
-  │  AWS Bedrock API          │
+  │  AWS Bedrock Batch API    │                              │
+  └──────────────────────────┘                    ┌─────────┴──────────┐
+                                                  │                    │
+                                            Numeric cells        Text cells
+                                                  │                    │
+                                                  ▼                    ▼
+  ┌──────────────────────────┐    ┌───────────────────────────────────────────┐
+  │   STUDENT (Numeric)       │    │             DEPLOYED MODELS               │
+  │  TrOCR-Large              │ ──►│  Numeric: 558M params · digits/symbols    │
+  │  558M params              │    │  Text:    558M params · alpha/punctuation  │
+  │  Fine-tuned 10 epochs     │    │  Each: Single GPU · ~ms/img · CER 0.000765│
+  ├──────────────────────────┤    └───────────────────────────────────────────┘
+  │   STUDENT (Text)          │ ──►
+  │  TrOCR-Large              │
+  │  558M params              │
+  │  Fine-tuned 10 epochs     │
   └──────────────────────────┘
-                                          │
-                                          ▼
-  ┌──────────────────────────┐    ┌──────────────────────┐
-  │       STUDENT             │    │     DEPLOYED MODEL    │
-  │  TrOCR-Large (Stage 1)   │ ──►│  558M params · 2.3 GB │
-  │  558M params              │    │  Single GPU · ~ms/img  │
-  │  Fine-tuned 10 epochs     │    │  CER: 0.000765        │
-  └──────────────────────────┘    └──────────────────────┘
 ```
 
 This approach works because the teacher's intelligence is **captured in the data** rather than transferred through gradient flow. The student sees the same images the teacher labelled, learns the same input-output mapping, and generalises within the domain.
+
+A further refinement was introduced: rather than training a single student on all 129K images, the labeled data was **split by content type** — numeric cell images (dates, currencies, integers, decimals) and text cell images (headers, labels, alphanumeric strings). Two separate TrOCR-Large models were fine-tuned on each split. This narrows each model's effective output vocabulary, reducing the hypothesis space the decoder must explore and yielding measurably lower error rates compared to a single general-purpose student.
 
 ---
 
@@ -52,7 +61,7 @@ This approach works because the teacher's intelligence is **captured in the data
 | **Active parameters**  | 22,000M                            | 558M                            |
 | **Parameter ratio**    | —                                  | **421× smaller** (total) / **39× smaller** (active) |
 | **Weights on disk**    | Not self-hosted (API)              | 2.3 GB (safetensors)            |
-| **Inference mode**     | AWS Bedrock managed API            | Self-hosted, single A10G GPU    |
+| **Inference mode**     | AWS Bedrock Batch Inference        | Self-hosted, single A10G GPU    |
 | **Input**              | Image + system prompt              | Image only (384×384)            |
 | **Output**             | Free-form text                     | Constrained OCR tokens          |
 | **Strengths**          | General-purpose vision-language    | Domain-specialised, fast        |
@@ -65,7 +74,7 @@ The teacher is a general-purpose model capable of understanding arbitrary images
 
 ### Labeling (Teacher) — One-Time Cost
 
-The teacher model on AWS Bedrock is priced at **$0.53 per 1M input tokens** and **$2.66 per 1M output tokens**. Each image requires a system prompt (~200 tokens), an image (variable token count depending on resolution), and produces a short transcription (~5–20 output tokens). For 129,041 images, the total labeling cost is a one-time fixed expense.
+Training labels were generated using **AWS Bedrock Batch Inference**, which processes all images asynchronously in a single job rather than via per-request API calls. Batch inference typically provides a cost discount over real-time invocations and avoids rate-limit constraints at scale. The teacher model is priced at **$0.53 per 1M input tokens** and **$2.66 per 1M output tokens**. Each image requires a system prompt (~200 tokens), an image (variable token count depending on resolution), and produces a short transcription (~5–20 output tokens). For 129,041 images, the total labeling cost is a one-time fixed expense.
 
 ### Inference (Student) — Recurring Cost
 
@@ -133,4 +142,8 @@ The data-augmentation approach is increasingly common in the LLM era, where larg
 
 4. **The student's limitation is scope, not quality**: within its domain, the student matches the teacher; outside it, the student has no capability.
 
-5. **This pattern is reusable**: any task where a large VLM can generate reliable labels on unlabeled data is a candidate for the same pipeline — document classification, table structure recognition, form field extraction, and beyond.
+5. **Two specialised models outperform one general model**: splitting training data by content type (numeric vs. text) constrains each student's output vocabulary and improves accuracy — a low-overhead gain requiring no architectural changes.
+
+6. **Bedrock Batch Inference is the right tool for large-scale labeling**: processing 129K images as a batch job avoids per-call latency, rate limits, and overhead, making the one-time labeling cost predictable and efficient.
+
+7. **This pattern is reusable**: any task where a large VLM can generate reliable labels on unlabeled data is a candidate for the same pipeline — document classification, table structure recognition, form field extraction, and beyond.
