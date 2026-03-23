@@ -14,7 +14,7 @@
 
 ## Abstract
 
-This study describes how a 235-billion-parameter vision-language model (Qwen3-VL-235B) was used as a **teacher** to generate training labels for two specialised 558-million-parameter OCR models (TrOCR-Large) — the **students**. Training labels were generated at scale using **AWS Bedrock Batch Inference**. Rather than deploying a single general student, the pipeline trains **two domain-specific models** — one for numeric cell content and one for text cell content — improving accuracy by reducing each model's output vocabulary to its relevant character set. The students achieved a Character Error Rate (CER) of 0.000765 on domain-specific table cell images, effectively inheriting the teacher's comprehension at **421× fewer parameters** and near-zero marginal inference cost. This document frames the approach within the broader knowledge distillation literature and analyses the cost-accuracy trade-off. For training specifics (hyperparameters, infrastructure, checkpointing), refer to the companion `MODEL_TRAINING_REPORT.md`.
+This study describes how a 235-billion-parameter vision-language model (Qwen3-VL-235B) was used as a **teacher** to generate training labels for two specialised OCR models (TrOCR-Base for numeric content and TrOCR-Large for text content) — the **students**. Training labels were generated at scale using **AWS Bedrock Batch Inference**. Rather than deploying a single general student, the pipeline trains **two domain-specific models** — one for numeric cell content and one for text cell content — improving accuracy by reducing each model's output vocabulary to its relevant character set. The students achieved a Character Error Rate (CER) of 0.000765 on domain-specific table cell images, effectively inheriting the teacher's comprehension at **421× fewer parameters** and near-zero marginal inference cost. This document frames the approach within the broader knowledge distillation literature and analyses the cost-accuracy trade-off. For training specifics (hyperparameters, infrastructure, checkpointing), refer to the companion `MODEL_TRAINING_REPORT.md`.
 
 ---
 
@@ -35,8 +35,8 @@ Knowledge distillation traditionally involves training a smaller "student" netwo
                                                   ▼                    ▼
   ┌──────────────────────────┐    ┌───────────────────────────────────────────┐
   │   STUDENT (Numeric)       │    │             DEPLOYED MODELS               │
-  │  TrOCR-Large              │ ──►│  Numeric: 558M params · digits/symbols    │
-  │  558M params              │    │  Text:    558M params · alpha/punctuation  │
+  │  TrOCR-Base               │ ──►│  Numeric: 334M params · digits/symbols    │
+  │  334M params              │    │  Text:    558M params · alpha/punctuation  │
   │  Fine-tuned 10 epochs     │    │  Each: Single GPU · ~ms/img · CER 0.000765│
   ├──────────────────────────┤    └───────────────────────────────────────────┘
   │   STUDENT (Text)          │ ──►
@@ -54,19 +54,19 @@ A further refinement was introduced: rather than training a single student on al
 
 ## 2. Teacher & Student Profiles
 
-| Dimension              | Teacher (Qwen3-VL-235B)            | Student (TrOCR-Large)           |
-|------------------------|------------------------------------|---------------------------------|
-| **Architecture**       | Mixture-of-Experts VLM             | ViT encoder + TrOCR decoder     |
-| **Total parameters**   | 235,000M                           | 558M                            |
-| **Active parameters**  | 22,000M                            | 558M                            |
-| **Parameter ratio**    | —                                  | **421× smaller** (total) / **39× smaller** (active) |
-| **Weights on disk**    | Not self-hosted (API)              | 2.3 GB (safetensors)            |
-| **Inference mode**     | AWS Bedrock Batch Inference        | Self-hosted, single A10G GPU    |
-| **Input**              | Image + system prompt              | Image only (384×384)            |
-| **Output**             | Free-form text                     | Constrained OCR tokens          |
-| **Strengths**          | General-purpose vision-language    | Domain-specialised, fast        |
+| Dimension              | Teacher (Qwen3-VL-235B)            | Student — Numeric (TrOCR-Base)  | Student — Text (TrOCR-Large)    |
+|------------------------|------------------------------------|---------------------------------|---------------------------------|
+| **Architecture**       | Mixture-of-Experts VLM             | ViT encoder + TrOCR decoder     | ViT encoder + TrOCR decoder     |
+| **Total parameters**   | 235,000M                           | 334M                            | 558M                            |
+| **Active parameters**  | 22,000M                            | 334M                            | 558M                            |
+| **Parameter ratio**    | —                                  | **703× smaller** (total) / **66× smaller** (active) | **421× smaller** (total) / **39× smaller** (active) |
+| **Weights on disk**    | Not self-hosted (API)              | ~1.4 GB (safetensors)           | 2.3 GB (safetensors)            |
+| **Inference mode**     | AWS Bedrock Batch Inference        | Self-hosted, single A10G GPU    | Self-hosted, single A10G GPU    |
+| **Input**              | Image + system prompt              | Image only (384×384)            | Image only (384×384)            |
+| **Output**             | Free-form text                     | Constrained OCR tokens          | Constrained OCR tokens          |
+| **Strengths**          | General-purpose vision-language    | Lightweight; digits/symbols     | Domain-specialised, fast        |
 
-The teacher is a general-purpose model capable of understanding arbitrary images and following complex instructions. The student is a purpose-built OCR model that does one thing — read table cell text — but does it extremely well and extremely cheaply.
+The teacher is a general-purpose model capable of understanding arbitrary images and following complex instructions. The students are purpose-built OCR models that each do one thing — read table cell text in their respective domain — but do it extremely well and extremely cheaply.
 
 ---
 
@@ -134,7 +134,7 @@ The data-augmentation approach is increasingly common in the LLM era, where larg
 
 ## 6. Key Takeaways
 
-1. **A 235B-parameter model's OCR capability can be effectively compressed into a 558M-parameter model** through label-based distillation, achieving near-perfect domain accuracy.
+1. **A 235B-parameter model's OCR capability can be effectively compressed into models as small as 334M–558M parameters** through label-based distillation, achieving near-perfect domain accuracy.
 
 2. **The cost structure inverts after distillation**: the teacher's per-query API cost is replaced by a fixed training cost plus near-zero inference cost.
 
