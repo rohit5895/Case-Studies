@@ -46,9 +46,9 @@ See [`MODEL_TRAINING_REPORT.md`](MODEL_TRAINING_REPORT.md) for full hyperparamet
 
 | File | Description |
 |---|---|
-| [`Summary.md`](Summary.md) | Distillation approach, cost analysis, and literature context |
+| [`distillation_approach.md`](distillation_approach.md) | Distillation approach, cost analysis, and literature context |
 | [`MODEL_TRAINING_REPORT.md`](MODEL_TRAINING_REPORT.md) | Full training configuration, architecture, and results |
-| [`CER vs WER.md`](CER%20vs%20WER.md) | Reference guide for OCR evaluation metrics |
+| [`evaluation/CER_vs_WER.md`](evaluation/CER_vs_WER.md) | Reference guide for OCR evaluation metrics |
 | [`code/train.py`](code/train.py) | Distributed training script |
 | [`code/inference.py`](code/inference.py) | SageMaker inference handler |
 | [`code/launch_training.py`](code/launch_training.py) | SageMaker training job launcher |
